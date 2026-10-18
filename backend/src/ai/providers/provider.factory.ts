@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LocalStorageService } from '../../common/storage/local-storage.service';
 import { ImageGenerationProvider } from './image-generation.provider';
 import { VideoGenerationProvider } from './video-generation.provider';
 import { OpenAIImageProvider } from './openai-image.provider';
@@ -12,7 +11,12 @@ export class ProviderFactory {
 
   constructor(
     private config: ConfigService,
-    private storage: LocalStorageService,
+    @Inject('STORAGE_SERVICE')
+    private storage: {
+      getPublicUrl: (subfolder: string, filename: string) => string;
+      saveFromUrl: (url: string, subfolder: string, extension?: string) => Promise<string>;
+      saveBuffer: (buffer: Buffer, subfolder: string, extension: string) => Promise<string>;
+    },
   ) {}
 
   getImageProvider(): ImageGenerationProvider {

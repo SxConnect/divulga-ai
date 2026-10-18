@@ -1,0 +1,52 @@
+# railway.toml — Deploy do Backend NestJS no Railway
+# 
+# Uso:
+#   1. railway login
+#   2. railway link (ou railway init)
+#   3. railway up
+# 
+# O Railway detecta o Dockerfile automaticamente.
+# Variáveis de ambiente necessárias (definir no painel do Railway):
+#   DATABASE_URL          → connection string pooled do Neon
+#   DIRECT_URL            → connection string direta do Neon (para migrations)
+#   REDIS_HOST            → host do Redis do Railway (preenchido automaticamente se add-on)
+#   REDIS_PORT            → 6379
+#   REDIS_PASSWORD        → senha do Redis do Railway (se houver)
+#   REDIS_TLS             → "true" (Railway Redis usa TLS)
+#   JWT_SECRET            → segredo forte (openssl rand -hex 32)
+#   MASTER_ENCRYPTION_KEY → 64 chars hex (openssl rand -hex 32)
+#   PUBLIC_BASE_URL       → https://seu-backend.railway.app
+#   FRONTEND_URL          → https://seu-frontend.vercel.app
+#   CORS_ORIGIN           → https://seu-frontend.vercel.app
+#   FACEBOOK_REDIRECT_URI → https://seu-backend.railway.app/api/v1/integrations/facebook/callback
+#   OPENAI_API_KEY        → (opcional) para geração de imagem
+#   STORAGE_ENDPOINT      → https://<account>.r2.cloudflarestorage.com
+#   STORAGE_BUCKET        → divulga-ai
+#   STORAGE_ACCESS_KEY    → (R2 access key)
+#   STORAGE_SECRET_KEY    → (R2 secret key)
+#   STORAGE_PUBLIC_URL    → https://cdn.seudominio.com (ou deixar vazio para usar endpoint/bucket)
+#   AI_PROVIDER           → openai
+#   PORT                  → 3000 (Railway injeta automaticamente)
+
+[build]
+builder = "docker"
+dockerfilePath = "backend/Dockerfile"
+
+[deploy]
+healthcheckPath = "/docs"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+# Release command: roda migrations ANTES de promover o novo deploy
+# (equivalente a `npx prisma migrate deploy`)
+releaseCommand = "npx prisma migrate deploy"
+
+# O Railway injeta PORT automaticamente; o Dockerfile expõe 3000
+# Não precisa de startCommand (usa CMD do Dockerfile)
+
+# Observação: se preferir não usar Dockerfile, pode usar nixpacks:
+# [build]
+# builder = "nixpacks"
+# [nixpacks]
+# aptPkgs = ["ffmpeg"]

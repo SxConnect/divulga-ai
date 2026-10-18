@@ -1,10 +1,14 @@
 generator client {
   provider = "prisma-client-js"
+  // Força o target correto para o runtime Debian/glibc com OpenSSL 3
+  // "native" pode resolver para musl em alguns containers, causando erro de libssl.so.1.1
+  binaryTargets = ["debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ============================================================

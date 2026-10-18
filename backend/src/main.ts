@@ -9,10 +9,17 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // Segurança: não subir em produção com segredos de exemplo
+  // Segurança: avisar em produção se usar segredos de exemplo
   const insecureSecrets = ['dev-secret', 'dev-secret-change-in-production', 'sua-chave-secreta-aqui-mude-em-producao'];
-  if (process.env.NODE_ENV === 'production' && insecureSecrets.includes(process.env.JWT_SECRET || 'dev-secret')) {
-    throw new Error('JWT_SECRET inseguro/ausente. Defina um segredo forte antes de subir em produção.');
+  const isProduction = process.env.NODE_ENV === 'production';
+  const jwtSecret = process.env.JWT_SECRET || 'dev-secret';
+  
+  if (isProduction && insecureSecrets.includes(jwtSecret)) {
+    throw new Error('JWT_SECRET inseguro/ausente. Defina um segredo forte antes de subir em produção (openssl rand -hex 32).');
+  }
+  
+  if (!isProduction && insecureSecrets.includes(jwtSecret)) {
+    console.warn('⚠️  ATENÇÃO: Usando JWT_SECRET de desenvolvimento. Não use em produção!');
   }
 
   app.setGlobalPrefix('api/v1');

@@ -1,6 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { LocalStorageService } from '../../common/storage/local-storage.service';
 import {
   ImageGenerationProvider,
   ImageGenerationRequest,
@@ -14,7 +13,12 @@ export class OpenAIImageProvider implements ImageGenerationProvider {
 
   constructor(
     private config: ConfigService,
-    private storage: LocalStorageService,
+    @Inject('STORAGE_SERVICE')
+    private storage: {
+      getPublicUrl: (subfolder: string, filename: string) => string;
+      saveFromUrl: (url: string, subfolder: string, extension?: string) => Promise<string>;
+      saveBuffer: (buffer: Buffer, subfolder: string, extension: string) => Promise<string>;
+    },
   ) {}
 
   async generate(request: ImageGenerationRequest): Promise<ImageGenerationResult> {
@@ -34,7 +38,7 @@ export class OpenAIImageProvider implements ImageGenerationProvider {
       const response = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({

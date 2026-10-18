@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 COPY package*.json ./
@@ -7,11 +7,10 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-alpine
+FROM node:20-slim
 
 # ffmpeg é obrigatório para a geração de vídeo (provider ffmpeg-slideshow).
-# curl é usado pelo healthcheck do compose.
-RUN apk add --no-cache ffmpeg curl
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 ENV NODE_ENV=production
@@ -26,5 +25,8 @@ RUN mkdir -p /app/uploads
 
 EXPOSE 3000
 
-# Aplica as migrations pendentes antes de subir a API
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
+# Migrations NÃO rodam automaticamente no boot (evita falhas de schema engine
+# e segue boas práticas: rode `npx prisma migrate deploy` como passo separado
+# no pipeline de deploy / Railway Release Command).
+# Se o schema estiver desatualizado, a API falhará ao iniciar — o que é desejável.
+CMD ["node", "dist/src/main.js"]

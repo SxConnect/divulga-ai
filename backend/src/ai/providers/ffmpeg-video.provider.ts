@@ -1,10 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
-import { LocalStorageService } from '../../common/storage/local-storage.service';
 import {
   VideoGenerationProvider,
   VideoGenerationRequest,
@@ -19,7 +18,14 @@ export class FFmpegVideoProvider implements VideoGenerationProvider {
   private readonly logger = new Logger(FFmpegVideoProvider.name);
   private readonly tmpDir = '/tmp/divulga-ai-videos';
 
-  constructor(private storage: LocalStorageService) {}
+  constructor(
+    @Inject('STORAGE_SERVICE')
+    private storage: {
+      getPublicUrl: (subfolder: string, filename: string) => string;
+      saveFromUrl: (url: string, subfolder: string, extension?: string) => Promise<string>;
+      saveBuffer: (buffer: Buffer, subfolder: string, extension: string) => Promise<string>;
+    },
+  ) {}
 
   async generate(request: VideoGenerationRequest): Promise<VideoGenerationResult> {
     const duration = request.duration || 15; // 15 segundos padrão
@@ -29,10 +35,9 @@ export class FFmpegVideoProvider implements VideoGenerationProvider {
     try {
       await fs.mkdir(this.tmpDir, { recursive: true });
 
-      // Nome final já conhecido: o ffmpeg grava direto no destino público
+      // Nome final já conhecido
       const finalName = `${request.productId}-${Date.now()}-${randomBytes(4).toString('hex')}.mp4`;
-      const finalPath = path.join(this.storage.baseDir, 'videos', finalName);
-      await fs.mkdir(path.dirname(finalPath), { recursive: true });
+      const finalPath = path.join(this.tmpDir, finalName);
 
       const concatFile = path.join(this.tmpDir, `concat-${Date.now()}.txt`);
       tempFiles.push(concatFile);
@@ -52,7 +57,6 @@ export class FFmpegVideoProvider implements VideoGenerationProvider {
       await fs.writeFile(concatFile, concatContent);
 
       // Montar vídeo com ffmpeg: slideshow 9:16 (1080x1920)
-      // execFile (e não exec) evita interpolação de string em shell
       await execFileAsync('ffmpeg', [
         '-y',
         '-f', 'concat',
@@ -66,11 +70,14 @@ export class FFmpegVideoProvider implements VideoGenerationProvider {
         finalPath,
       ]);
 
-      // O arquivo é mantido no storage e servido via /files/videos/*
-      const videoUrl = this.storage.getPublicUrl('videos', finalName);
-      this.logger.log(`Vídeo gerado: ${videoUrl}`);
+      // Upload para storage (S3/R2 ou local)
+      const videoBuffer = await fs.readFile(finalPath);
+      const videoUrl = await this.storage.saveBuffer(videoBuffer, 'videos', 'mp4');
+
+      this.logger.log(`Vídeo gerado e armazenado: ${videoUrl}`);
 
       await this.cleanup(tempFiles);
+      await fs.unlink(finalPath).catch(() => {});
 
       return { success: true, videoUrl };
     } catch (error) {
@@ -84,7 +91,6 @@ export class FFmpegVideoProvider implements VideoGenerationProvider {
     const response = await fetch(url);
 
     if (!response.ok) {
-      // Evita salvar HTML de erro como ".jpg" e derrubar o ffmpeg depois
       throw new Error(`Falha ao baixar imagem ${url}: HTTP ${response.status}`);
     }
 
