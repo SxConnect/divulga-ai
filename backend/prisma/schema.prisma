@@ -1,0 +1,219 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// MULTI-TENANT BASE
+// ============================================================
+
+model Tenant {
+  id            String   @id @default(uuid())
+  name          String
+  plan          String   @default("starter") // starter | pro | agency
+  status        String   @default("active")  // active | suspended | cancelled
+  planLimits    Json?    @default("{}")       // { maxGenerations: 50, maxPublications: 100, maxUsers: 3 }
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  users             User[]
+  integrations      Integration[]
+  aiGenerations     AIGeneration[]
+  campaigns         Campaign[]
+  publications      Publication[]
+  creditLedger      CreditLedger[]
+  auditLogs         AuditLog[]
+  products          Product[]
+  supplierCatalogs  SupplierCatalog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         String   @default("member") // admin | member
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  auditLogs   AuditLog[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+// ============================================================
+// CATÁLOGO DE FORNECEDORES E PRODUTOS
+// ============================================================
+
+model SupplierCatalog {
+  id        String   @id @default(uuid())
+  tenantId  String?  @map("tenant_id") // null = catálogo global de parceiros
+  name      String
+  type      String   @default("partner") // own | partner_global
+  createdAt DateTime @default(now()) @map("created_at")
+
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  products Product[]
+
+  @@index([tenantId])
+  @@map("supplier_catalogs")
+}
+
+model Product {
+  id                String   @id @default(uuid())
+  tenantId          String?  @map("tenant_id")
+  supplierCatalogId String   @map("supplier_catalog_id")
+  name              String
+  price             Decimal  @db.Decimal(10, 2)
+  originalImages    Json     @default("[]") @map("original_images")
+  category          String?
+  metadata          Json     @default("{}")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  tenant         Tenant?          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  supplierCatalog SupplierCatalog @relation(fields: [supplierCatalogId], references: [id], onDelete: Cascade)
+  aiGenerations  AIGeneration[]
+  campaigns      Campaign[]
+
+  @@index([tenantId])
+  @@index([supplierCatalogId])
+  @@map("products")
+}
+
+// ============================================================
+// INTEGRAÇÕES
+// ============================================================
+
+model Integration {
+  id                    String   @id @default(uuid())
+  tenantId              String   @map("tenant_id")
+  channel               String   // shopee | mercado_livre | tiktok_shop | facebook | instagram | whatsapp
+  encryptedCredentials  String   @map("encrypted_credentials")
+  externalAccountId     String?  @map("external_account_id")
+  status                String   @default("active") // active | expired | revoked
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channel])
+  @@index([tenantId])
+  @@map("integrations")
+}
+
+// ============================================================
+// GERAÇÃO DE IA
+// ============================================================
+
+model AIGeneration {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  productId      String   @map("product_id")
+  type           String   // image | video
+  promptUsed     String   @map("prompt_used")
+  generatedUrl   String?  @map("generated_url")
+  creditsCost    Int      @default(1) @map("credits_cost")
+  status         String   @default("pending") // pending | processing | completed | failed
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([productId])
+  @@map("ai_generations")
+}
+
+// ============================================================
+// CAMPANHAS E PUBLICAÇÕES
+// ============================================================
+
+model Campaign {
+  id                 String   @id @default(uuid())
+  tenantId           String   @map("tenant_id")
+  productId          String   @map("product_id")
+  name               String
+  selectedChannels   Json     @default("[]") @map("selected_channels") // ["facebook", "instagram", ...]
+  scheduledAt        DateTime? @map("scheduled_at")
+  status             String   @default("draft") // draft | scheduled | running | completed | failed
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  publications Publication[]
+
+  @@index([tenantId])
+  @@map("campaigns")
+}
+
+model Publication {
+  id             String    @id @default(uuid())
+  tenantId       String    @map("tenant_id")
+  campaignId     String    @map("campaign_id")
+  channel        String    // facebook | instagram | tiktok | whatsapp
+  destination    String?   // page | group | story | reels
+  externalPostId String?   @map("external_post_id")
+  result         Json      @default("{}")
+  publishedAt    DateTime? @map("published_at")
+  status         String    @default("pending") // pending | published | failed
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([campaignId])
+  @@map("publications")
+}
+
+// ============================================================
+// CRÉDITOS
+// ============================================================
+
+model CreditLedger {
+  id         String   @id @default(uuid())
+  tenantId   String   @map("tenant_id")
+  type       String   // consumption | recharge
+  quantity   Int
+  reference  String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("credit_ledger")
+}
+
+// ============================================================
+// AUDIT LOG
+// ============================================================
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String?  @map("user_id") // null = ação disparada pelo sistema (workers/filas)
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  details   Json     @default("{}")
+  timestamp DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@map("audit_logs")
+}
